@@ -10,6 +10,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.11"]
 
     steps:
       - uses: actions/checkout@v4
@@ -19,18 +22,20 @@ jobs:
         with:
           platforms: "linux/s390x"
 
-      - name: Install
+      - name: Build grpcio wheel for Python ${{ matrix.python-version }}
         id: install
-        run: >-
-          docker run --rm --platform "linux/s390x"
-          --mount "type=bind,src=$(pwd),dst=/build"
-          -w "/build" s390x/python:3.9 /bin/bash -ec '
-          export GRPC_PYTHON_BUILD_SYSTEM_OPENSSL=1;
-          pip install --upgrade pip;
-          pip install --upgrade setuptools;
-          pip install grpcio==${{ inputs.release }};
-          WHEEL_PATH=$(find /root/.cache/pip/wheels/ -name "grpcio*.whl");
-          cp $WHEEL_PATH /build/;'          
+        run: |
+          PY_VER=${{ matrix.python-version }}
+          echo "Building grpcio==${{ inputs.release }} for Python $PY_VER"
+          docker run --rm --platform "linux/s390x" \
+            --mount "type=bind,src=$(pwd),dst=/build" \
+            -w "/build" s390x/python:$PY_VER /bin/bash -ec "
+              export GRPC_PYTHON_BUILD_SYSTEM_OPENSSL=1;
+              pip install --upgrade pip setuptools;
+              pip install grpcio==${{ inputs.release }};
+              WHEEL_PATH=\$(find /root/.cache/pip/wheels/ -name 'grpcio*.whl');
+              cp \$WHEEL_PATH /build/grpcio-${{ inputs.release }}-py${PY_VER/./}-s390x.whl;
+            "
 
       - name: Create a tag
         env:
@@ -44,9 +49,9 @@ jobs:
       - name: Capture the file
         id: capture
         run: |
-          WHEEL_PATH=$(find $PWD -name "grpcio*.whl")
-          echo "Found $WHEEL_PATH"
-          echo "ARTIFACT=$WHEEL_PATH" >> $GITHUB_OUTPUT
+          WHEEL_PATHS=$(find $PWD -name "grpcio*.whl" | tr '\n' ' ')
+          echo "Found $WHEEL_PATHS"
+          echo "ARTIFACT=$WHEEL_PATHS" >> $GITHUB_OUTPUT
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
